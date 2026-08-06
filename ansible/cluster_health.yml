@@ -1,0 +1,71 @@
+---
+- hosts: rpi
+  gather_facts: false
+
+  tasks:
+
+    - name: Hostname
+      command: hostname
+      register: hostname
+
+    - debug:
+        var: hostname.stdout
+
+    - name: IP Address
+      command: hostname -I
+      register: ip
+
+    - debug:
+        var: ip.stdout
+
+    - name: Internet
+      command: ping -c 2 8.8.8.8
+      register: internet
+      ignore_errors: yes
+
+    - debug:
+        var: internet.rc
+
+    - name: DNS
+      command: ping -c 2 google.com
+      register: dns
+      ignore_errors: yes
+
+    - debug:
+        var: dns.rc
+
+    - name: Disk
+      command: df -h /
+      register: disk
+
+    - debug:
+        var: disk.stdout_lines
+
+    - name: Memory
+      command: free -h
+      register: memory
+
+    - debug:
+        var: memory.stdout_lines
+
+    - name: CPU Count
+      command: nproc
+      register: cpu
+
+    - debug:
+        var: cpu.stdout
+
+    - name: Temperature
+      command: vcgencmd measure_temp
+      register: temp
+      ignore_errors: yes
+
+    - debug:
+        var: temp.stdout
+
+    - name: Routing
+      command: ip route
+      register: route
+
+    - debug:
+        var: route.stdout_lines

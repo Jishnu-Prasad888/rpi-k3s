@@ -1,6 +1,6 @@
 ---
 - name: Configure permanent static IPs on Raspberry Pis
-  hosts: rpis
+  hosts: raspberry_pis
   become: true
   gather_facts: false
   serial: 1

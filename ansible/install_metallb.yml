@@ -1,0 +1,30 @@
+---
+- name: Install MetalLB
+  hosts: control_plane
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Apply MetalLB
+      ansible.builtin.command:
+        cmd: >
+          k3s kubectl apply
+          -f https://raw.githubusercontent.com/metallb/metallb/v0.15.2/config/manifests/metallb-native.yaml
+
+    - name: Wait for MetalLB controller
+      ansible.builtin.command:
+        cmd: >
+          k3s kubectl rollout status
+          deployment/controller
+          -n metallb-system
+          --timeout=180s
+      changed_when: false
+
+    - name: Wait for MetalLB speakers
+      ansible.builtin.command:
+        cmd: >
+          k3s kubectl rollout status
+          daemonset/speaker
+          -n metallb-system
+          --timeout=180s
+      changed_when: false

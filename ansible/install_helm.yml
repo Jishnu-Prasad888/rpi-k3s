@@ -1,0 +1,27 @@
+---
+- name: Install Helm on control plane
+  hosts: control_plane
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    - name: Download Helm installer
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        dest: /tmp/get_helm.sh
+        mode: "0755"
+
+    - name: Install Helm
+      ansible.builtin.command:
+        cmd: /tmp/get_helm.sh
+        creates: /usr/local/bin/helm
+
+    - name: Check Helm
+      ansible.builtin.command:
+        cmd: helm version
+      register: helm_version
+      changed_when: false
+
+    - name: Display Helm version
+      ansible.builtin.debug:
+        var: helm_version.stdout

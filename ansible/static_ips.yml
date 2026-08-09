@@ -1,0 +1,94 @@
+---
+- name: Configure permanent static IPs on Raspberry Pis
+  hosts: rpis
+  become: true
+  gather_facts: false
+  serial: 1
+
+  vars:
+    gateway: "192.168.0.1"
+    dns: "192.168.0.1"
+    subnet: "24"
+
+    static_ips:
+      rpi1: "192.168.0.101"
+      rpi2: "192.168.0.103"
+      rpi3: "192.168.0.106"
+      rpi4: "192.168.0.104"
+      rpi5: "192.168.0.105"
+
+  tasks:
+
+    - name: Find active Ethernet connection
+      shell: |
+        nmcli -t -f NAME,TYPE,DEVICE connection show --active |
+        awk -F: '$2=="802-3-ethernet" {print $1; exit}'
+      register: ethernet_connection
+      changed_when: false
+
+    - name: Show Ethernet connection
+      debug:
+        msg: "Using connection: {{ ethernet_connection.stdout }}"
+
+    - name: Configure static IPv4
+      command:
+        argv:
+          - nmcli
+          - connection
+          - modify
+          - "{{ ethernet_connection.stdout }}"
+          - ipv4.method
+          - manual
+          - ipv4.addresses
+          - "{{ static_ips[inventory_hostname] }}/{{ subnet }}"
+          - ipv4.gateway
+          - "{{ gateway }}"
+          - ipv4.dns
+          - "{{ dns }}"
+          - ipv4.never-default
+          - "no"
+
+    - name: Disable IPv6 on Ethernet
+      command:
+        argv:
+          - nmcli
+          - connection
+          - modify
+          - "{{ ethernet_connection.stdout }}"
+          - ipv6.method
+          - disabled
+
+    - name: Display resulting configuration
+      command:
+        argv:
+          - nmcli
+          - connection
+          - show
+          - "{{ ethernet_connection.stdout }}"
+      register: connection_config
+      changed_when: false
+
+    - name: Show configuration
+      debug:
+        var: connection_config.stdout_lines
+
+    - name: Reconnect Ethernet using new static configuration
+      shell: |
+        nohup bash -c 'sleep 3; nmcli connection down "{{ ethernet_connection.stdout }}" || true; nmcli connection up "{{ ethernet_connection.stdout }}"' >/tmp/static-ip-reconnect.log 2>&1 &
+      async: 1
+      poll: 0
+
+    - name: Wait for network to settle
+      pause:
+        seconds: 8
+
+    - name: Verify static IP
+      shell: |
+        ip -4 addr show dev eth0
+      register: ip_result
+      changed_when: false
+      ignore_errors: true
+
+    - name: Show IP
+      debug:
+        var: ip_result.stdout_lines

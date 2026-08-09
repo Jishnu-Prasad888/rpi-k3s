@@ -1,0 +1,25 @@
+---
+- name: Enable memory cgroups on Raspberry Pi
+  hosts: rpi
+  become: yes
+  gather_facts: no
+
+  tasks:
+
+    - name: Check current cmdline
+      command: cat /boot/firmware/cmdline.txt
+      register: cmdline
+
+    - name: Add cgroup parameters if missing
+      lineinfile:
+        path: /boot/firmware/cmdline.txt
+        regexp: '^(.*)$'
+        line: "{{ cmdline.stdout }} cgroup_memory=1 cgroup_enable=memory"
+        backrefs: yes
+      when:
+        - "'cgroup_memory=1' not in cmdline.stdout"
+        - "'cgroup_enable=memory' not in cmdline.stdout"
+
+    - name: Reboot Pis
+      reboot:
+        reboot_timeout: 300

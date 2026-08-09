@@ -1,0 +1,107 @@
+---
+###############################################################################
+# Install K3s Server
+###############################################################################
+
+- name: Install K3s Control Plane
+  hosts: rpi1
+  become: yes
+  gather_facts: yes
+
+  tasks:
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - wget
+        state: present
+
+    - name: Install K3s server
+      shell: |
+        curl -sfL https://get.k3s.io | \
+        INSTALL_K3S_EXEC="server \
+        --write-kubeconfig-mode=644 \
+        --node-name=rpi1" \
+        sh -
+      args:
+        executable: /bin/bash
+
+    - name: Wait for node token
+      wait_for:
+        path: /var/lib/rancher/k3s/server/node-token
+        timeout: 300
+
+    - name: Read node token
+      slurp:
+        src: /var/lib/rancher/k3s/server/node-token
+      register: token_file
+
+    - name: Save token for workers
+      set_fact:
+        k3s_token: "{{ token_file.content | b64decode | trim }}"
+
+###############################################################################
+# Install Workers
+###############################################################################
+
+- name: Install Worker Nodes
+  hosts: "rpi:!rpi1"
+  become: yes
+  gather_facts: yes
+
+  vars:
+    server_ip: 192.168.0.101
+
+  tasks:
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install curl
+      apt:
+        name: curl
+        state: present
+
+    - name: Wait until server is reachable
+      wait_for:
+        host: "{{ server_ip }}"
+        port: 6443
+        timeout: 300
+
+    - name: Install K3s agent
+      shell: |
+        curl -sfL https://get.k3s.io | \
+        K3S_URL=https://{{ server_ip }}:6443 \
+        K3S_TOKEN="{{ hostvars['rpi1']['k3s_token'] }}" \
+        INSTALL_K3S_EXEC="agent --node-name={{ inventory_hostname }}" \
+        sh -
+      args:
+        executable: /bin/bash
+
+###############################################################################
+# Verify Cluster
+###############################################################################
+
+- name: Verify Cluster
+  hosts: rpi1
+  become: yes
+  gather_facts: no
+
+  tasks:
+
+    - name: Wait for all nodes
+      pause:
+        seconds: 30
+
+    - name: Show cluster nodes
+      command: k3s kubectl get nodes -o wide
+      register: nodes
+
+    - debug:
+        var: nodes.stdout_lines

@@ -1,0 +1,13 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: minio-tls
+  namespace: minio-tenant
+spec:
+  secretName: minio-tls
+  issuerRef:
+    name: k3s-local-ca-issuer
+    kind: ClusterIssuer
+  dnsNames:
+    - minio.k3s.local
+    - minio-console.k3s.local

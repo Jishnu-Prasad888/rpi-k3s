@@ -1,0 +1,30 @@
+apiVersion: minio.min.io/v2
+kind: Tenant
+metadata:
+  name: minio
+  namespace: minio-tenant
+spec:
+  configuration:
+    name: minio-env-configuration
+
+  pools:
+    - name: pool-0
+      servers: 1
+      volumesPerServer: 1
+      volumeClaimTemplate:
+        metadata:
+          name: minio-data
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          storageClassName: longhorn
+          resources:
+            requests:
+              storage: 10Gi
+
+  mountPath: /export
+
+  requestAutoCert: false
+
+  features:
+    bucketDNS: false

@@ -1,0 +1,63 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: harbor
+  namespace: kube-system
+spec:
+  repo: https://helm.goharbor.io
+  chart: harbor
+  targetNamespace: harbor
+  createNamespace: true
+
+  valuesContent: |-
+    expose:
+      type: clusterIP
+      tls:
+        enabled: false
+
+    externalURL: http://harbor.k3s.local
+
+    persistence:
+      enabled: true
+      persistentVolumeClaim:
+        registry:
+          storageClass: longhorn
+          size: 20Gi
+        jobservice:
+          jobLog:
+            storageClass: longhorn
+            size: 2Gi
+        database:
+          storageClass: longhorn
+          size: 5Gi
+        redis:
+          storageClass: longhorn
+          size: 2Gi
+        trivy:
+          storageClass: longhorn
+          size: 5Gi
+
+    trivy:
+      enabled: true
+
+    notary:
+      enabled: false
+
+    metrics:
+      enabled: true
+
+    portal:
+      replicas: 1
+
+    core:
+      replicas: 1
+
+    jobservice:
+      replicas: 1
+
+    registry:
+      replicas: 1
+
+    trivy:
+      replicas: 1
+

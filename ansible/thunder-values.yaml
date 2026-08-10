@@ -1,0 +1,53 @@
+deployment:
+  replicaCount: 1
+
+image:
+  tag: "0.28.0"
+
+ingress:
+  enabled: true
+  className: nginx
+  hostname: thunder.openchoreo.192-168-0-202.nip.io
+  tlsSecretsName: thunder-tls
+
+gateway:
+  enabled: false
+
+configuration:
+  server:
+    port: 8090
+    httpOnly: false
+    publicUrl: "https://thunder.openchoreo.192-168-0-202.nip.io"
+
+  gateClient:
+    hostname: "thunder.openchoreo.192-168-0-202.nip.io"
+    port: 443
+    scheme: "https"
+    path: "/gate"
+
+config:
+  type: postgres
+  name: configdb
+  host: thunder-postgresql.thunder.svc
+  port: "5432"
+  username: asgthunder
+  password: asgthunder
+  sslmode: disable
+
+runtime:
+  type: postgres
+  name: runtimedb
+  host: thunder-postgresql.thunder.svc
+  port: "5432"
+  username: asgthunder
+  password: asgthunder
+  sslmode: disable
+
+user:
+  type: postgres
+  name: userdb
+  host: thunder-postgresql.thunder.svc
+  port: "5432"
+  username: asgthunder
+  password: asgthunder
+  sslmode: disable

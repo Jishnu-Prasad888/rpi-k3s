@@ -1,0 +1,94 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: register-backstage-client
+  namespace: thunder
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      serviceAccountName: thunder-service-account
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: register
+          image: ghcr.io/asgardeo/thunder:0.28.0
+          imagePullPolicy: Always
+          env:
+            - name: DB_CONFIG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: thunder-db-credentials
+                  key: config-db-password
+            - name: DB_RUNTIME_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: thunder-db-credentials
+                  key: runtime-db-password
+            - name: DB_USER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: thunder-db-credentials
+                  key: user-db-password
+          command:
+            - /bin/sh
+            - -c
+            - |
+              export THUNDER_SKIP_SECURITY=true
+              ./thunder &
+              THUNDER_PID=$!
+              for i in $(seq 1 30); do
+                curl -k -s http://localhost:8090/health/readiness > /dev/null 2>&1 && break
+                sleep 2
+              done
+              echo "--- Fetching console flow IDs to reuse for backstage client ---"
+              FLOWS=$(curl -k -s "http://localhost:8090/flows?flowType=AUTHENTICATION&limit=200")
+              AUTH_FLOW_ID=$(echo "$FLOWS" | grep -o "\"id\":\"[^\"]*\",\"name\":\"Default Basic Authentication Flow\"" | head -1 | grep -o "^\"id\":\"[^\"]*\"" | cut -d"\"" -f4)
+              echo "Auth flow ID: $AUTH_FLOW_ID"
+              REGFLOWS=$(curl -k -s "http://localhost:8090/flows?flowType=REGISTRATION&limit=200")
+              REG_FLOW_ID=$(echo "$REGFLOWS" | grep -o "\"id\":\"[^\"]*\",\"name\":\"Default Basic Registration Flow\"" | head -1 | grep -o "^\"id\":\"[^\"]*\"" | cut -d"\"" -f4)
+              echo "Reg flow ID: $REG_FLOW_ID"
+              echo "--- Creating Backstage application ---"
+              curl -k -s -w "\nHTTP_CODE:%{http_code}\n" -X POST http://localhost:8090/applications \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"name\": \"Backstage\",
+                  \"description\": \"OpenChoreo Backstage Console\",
+                  \"url\": \"http://console.192-168-0-202.nip.io\",
+                  \"auth_flow_id\": \"$AUTH_FLOW_ID\",
+                  \"registration_flow_id\": \"$REG_FLOW_ID\",
+                  \"is_registration_flow_enabled\": false,
+                  \"allowed_user_types\": [\"Person\"],
+                  \"user_attributes\": [\"given_name\",\"family_name\",\"email\",\"groups\",\"name\",\"ouId\"],
+                  \"inbound_auth_config\": [{
+                    \"type\": \"oauth2\",
+                    \"config\": {
+                      \"client_id\": \"openchoreo-backstage-client\",
+                      \"client_secret\": \"5e151a673fc7741ed86f7a8d7361f62739773721982711304f3f3c29a9205596\",
+                      \"redirect_uris\": [\"http://console.192-168-0-202.nip.io/api/auth/openchoreo-auth/handler/frame\"],
+                      \"grant_types\": [\"authorization_code\"],
+                      \"response_types\": [\"code\"],
+                      \"pkce_required\": false,
+                      \"token_endpoint_auth_method\": \"client_secret_post\",
+                      \"public_client\": false,
+                      \"token\": {
+                        \"access_token\": {\"validity_period\": 3600, \"user_attributes\": [\"given_name\",\"family_name\",\"email\",\"groups\",\"name\",\"ouId\"]},
+                        \"id_token\": {\"validity_period\": 3600, \"user_attributes\": [\"given_name\",\"family_name\",\"email\",\"groups\",\"name\",\"ouId\"]}
+                      }
+                    }
+                  }]
+                }"
+              echo ""
+              echo "--- Done ---"
+              kill $THUNDER_PID
+          volumeMounts:
+            - name: deployment-yaml-volume
+              mountPath: /opt/thunder/repository/conf/deployment.yaml
+              subPath: deployment.yaml
+      volumes:
+        - name: deployment-yaml-volume
+          configMap:
+            name: thunder-setup-config-map

@@ -1,0 +1,30 @@
+# Secrets — never commit credentials
+*.key
+*.pem
+*.p12
+secrets.yml
+secrets.yaml
+vault_password
+*.vault
+
+# Ansible
+*.retry
+*.log
+ansible/.cache/
+ansible/.fact_cache/
+
+# K3s / kubeconfig
+kubeconfig
+*.kubeconfig
+k3s.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

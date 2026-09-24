@@ -142,6 +142,7 @@ rpi-k3s/
     │   ├── disable_k3s_defaults.yml   # Disable Traefik + ServiceLB (replaced by MetalLB/nginx)
     │   ├── install_helm.yml           # Install Helm 3 on control plane
     │   ├── install_metallb.yml        # Install MetalLB v0.15.2 native manifests
+    │   ├── setup_ftp.yml              # vsftpd + chroot-jailed FTP users (LAN only)
     │   └── cluster_health.yml         # Read-only diagnostics (hostname, disk, RAM, temp, etc.)
     │
     ├── # Kubernetes manifests (kubectl apply -f on rpi1)

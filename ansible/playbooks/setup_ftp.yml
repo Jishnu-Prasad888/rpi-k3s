@@ -1,0 +1,129 @@
+---
+###############################################################################
+# Setup vsftpd FTP server on all Raspberry Pis
+#
+# Installs vsftpd, creates chroot-jailed FTP users, and configures passive
+# mode on a dedicated port range.
+#
+# Run from the ansible/ directory:
+#
+#   ansible-playbook -i inventory.ini playbooks/setup_ftp.yml
+#
+# Set a custom user/password (recommended):
+#
+#   ansible-playbook -i inventory.ini playbooks/setup_ftp.yml \
+#     -e 'ftp_users=[{"name":"ftpuser","password":"<strong-pass>"}]'
+#
+# NOTE: Plain FTP sends credentials in cleartext. Only use on a trusted LAN.
+# For access over the internet/Tailscale, TLS (FTPS) should be enabled instead.
+###############################################################################
+
+- name: Install and configure vsftpd FTP server
+  hosts: rpi
+  become: yes
+  gather_facts: yes
+
+  vars:
+    ftp_users:
+      - name: ftpuser
+        password: changeme            # override with -e (see header)
+    ftp_base_dir: /srv/ftp
+    ftp_pasv_min: 40000
+    ftp_pasv_max: 40100
+    ftp_banner: "Welcome to the RPi K3s FTP server"
+
+    # Fixed salt keeps the task idempotent (same hash between runs).
+    # Requires passlib on the controller:  pip install passlib
+    ftp_hash_salt: k3sftpsalt
+
+  tasks:
+    - name: Install vsftpd
+      ansible.builtin.apt:
+        name: vsftpd
+        state: present
+        update_cache: true
+
+    - name: Create FTP system users (login disabled)
+      ansible.builtin.user:
+        name: "{{ item.name }}"
+        comment: "FTP user"
+        shell: /usr/sbin/nologin
+        create_home: no
+        password: "{{ item.password | password_hash('sha512', ftp_hash_salt) }}"
+      loop: "{{ ftp_users }}"
+
+    - name: Create home directories (root-owned, read-only for the chroot jail)
+      ansible.builtin.file:
+        path: "{{ ftp_base_dir }}/{{ item.name }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0555"
+      loop: "{{ ftp_users }}"
+
+    - name: Create writable upload directories for each user
+      ansible.builtin.file:
+        path: "{{ ftp_base_dir }}/{{ item.name }}/uploads"
+        state: directory
+        owner: "{{ item.name }}"
+        group: "{{ item.name }}"
+        mode: "0755"
+      loop: "{{ ftp_users }}"
+
+    - name: Configure vsftpd
+      ansible.builtin.copy:
+        dest: /etc/vsftpd.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by Ansible -- playbooks/setup_ftp.yml
+          listen=YES
+          listen_ipv6=NO
+          anonymous_enable=NO
+          local_enable=YES
+          write_enable=YES
+          local_umask=022
+          dirmessage_enable=YES
+          use_localtime=YES
+          xferlog_enable=YES
+          connect_from_port_20=YES
+          chroot_local_user=YES
+          secure_chroot_dir=/var/run/vsftpd/empty
+          pam_service_name=vsftpd
+          pasv_enable=YES
+          pasv_min_port={{ ftp_pasv_min }}
+          pasv_max_port={{ ftp_pasv_max }}
+          ftpd_banner={{ ftp_banner }}
+      notify: restart vsftpd
+
+    - name: Enable and start vsftpd
+      ansible.builtin.systemd:
+        name: vsftpd
+        enabled: true
+        state: started
+
+    - name: Open FTP ports in UFW if it is installed
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - "20,21"
+        - "{{ ftp_pasv_min }}:{{ ftp_pasv_max }}"
+      when: ansible_facts.packages is defined and 'ufw' in ansible_facts.packages
+
+    - name: Show FTP connection details
+      ansible.builtin.debug:
+        msg:
+          - "FTP server:       ftp://{{ ansible_default_ipv4.address }}/"
+          - "User:             {{ item.name }}"
+          - "Upload directory: {{ ftp_base_dir }}/{{ item.name }}/uploads"
+          - "Passive mode:     ports {{ ftp_pasv_min }}-{{ ftp_pasv_max }}"
+      loop: "{{ ftp_users }}"
+
+  handlers:
+    - name: restart vsftpd
+      ansible.builtin.systemd:
+        name: vsftpd
+        state: restarted

@@ -59,6 +59,7 @@ Playbooks that configure the Raspberry Pi hosts themselves. They are run with `a
 | `disable_k3s_defaults.yml` | Writes `/etc/rancher/k3s/config.yaml` with `disable: traefik` and `disable: servicelb` so MetalLB + ingress-nginx take over. | `k3s_inventory.ini` → `[control_plane]` |
 | `install_helm.yml` | Downloads the official `get-helm-3` script and installs Helm on the control plane. | `k3s_inventory.ini` → `[control_plane]` |
 | `install_metallb.yml` | Applies the MetalLB **v0.15.2** native manifests via `k3s kubectl` and waits for the controller rollout. Pool still needs `manifests/metallb-config.yml`. | `k3s_inventory.ini` → `[control_plane]` |
+| `setup_ftp.yml` | Installs **vsftpd**, creates chroot-jailed FTP users (read-only home + writable `uploads/` dir) with SSH login disabled, configures passive mode on ports `40000–40100`, and opens firewall ports if UFW is present. Plain FTP — LAN only. | `inventory.ini` → `[rpi]` |
 
 ### Diagnostics
 

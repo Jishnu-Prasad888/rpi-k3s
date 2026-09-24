@@ -1,0 +1,251 @@
+---
+- name: Clean existing Docker/Dokploy installation
+  hosts: rpi
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Stop Docker services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop:
+        - docker
+        - docker.socket
+        - containerd
+      failed_when: false
+
+    - name: Leave existing Docker Swarm
+      ansible.builtin.command:
+        cmd: docker swarm leave --force
+      failed_when: false
+      changed_when: false
+
+    - name: Remove Docker packages
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - docker-ce-rootless-extras
+          - docker-buildx-plugin
+          - docker-compose-plugin
+          - containerd.io
+          - docker.io
+          - docker-compose
+          - podman-docker
+        state: absent
+        purge: true
+        autoremove: true
+        update_cache: true
+
+    - name: Remove Docker data
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/lib/docker
+        - /var/lib/containerd
+        - /etc/docker
+        - /opt/dokploy
+
+    - name: Remove Docker group
+      ansible.builtin.group:
+        name: docker
+        state: absent
+
+    - name: Remove Docker repository files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/docker.list
+        - /etc/apt/keyrings/docker.asc
+        - /etc/apt/keyrings/docker.gpg
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+- name: Install Docker
+  hosts: rpi
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Install prerequisites
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+        state: present
+        update_cache: true
+
+    - name: Download Docker installation script
+      ansible.builtin.get_url:
+        url: https://get.docker.com
+        dest: /tmp/get-docker.sh
+        mode: "0755"
+
+    - name: Install Docker
+      ansible.builtin.command:
+        cmd: /tmp/get-docker.sh
+        creates: /usr/bin/docker
+
+    - name: Add Ansible user to docker group
+      ansible.builtin.user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: true
+
+    - name: Enable and start Docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Verify Docker architecture
+      ansible.builtin.command:
+        cmd: docker info --format '{{ "{{.Architecture}}" }}'
+      register: docker_arch
+      changed_when: false
+
+    - name: Display Docker architecture
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} Docker architecture: {{ docker_arch.stdout }}"
+
+- name: Initialize Docker Swarm on rpi1
+  hosts: control_plane
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Get Tailscale IPv4 address
+      ansible.builtin.command:
+        cmd: tailscale ip -4
+      register: tailscale_ip
+      changed_when: false
+
+    - name: Verify Tailscale address
+      ansible.builtin.assert:
+        that:
+          - tailscale_ip.stdout is match('^100\\.')
+        fail_msg: "Could not obtain a valid Tailscale IPv4 address."
+
+    - name: Initialize Docker Swarm using Tailscale
+      ansible.builtin.command:
+        cmd: >
+          docker swarm init
+          --advertise-addr {{ tailscale_ip.stdout }}
+          --listen-addr {{ tailscale_ip.stdout }}:2377
+      register: swarm_init
+      failed_when:
+        - swarm_init.rc != 0
+        - "'already part of a swarm' not in swarm_init.stderr"
+
+    - name: Get worker join token
+      ansible.builtin.command:
+        cmd: docker swarm join-token -q worker
+      register: swarm_worker_token
+      changed_when: false
+
+    - name: Save Swarm connection information
+      ansible.builtin.set_fact:
+        swarm_manager_ip: "{{ tailscale_ip.stdout }}"
+        swarm_worker_token_value: "{{ swarm_worker_token.stdout }}"
+
+    - name: Display Swarm manager address
+      ansible.builtin.debug:
+        msg: "Swarm manager: {{ tailscale_ip.stdout }}:2377"
+
+- name: Join rpi2 and rpi3 to Docker Swarm
+  hosts: workers
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Get current Swarm state
+      ansible.builtin.command:
+        cmd: docker info --format '{{ "{{.Swarm.LocalNodeState}}" }}'
+      register: swarm_state
+      changed_when: false
+
+    - name: Get rpi1 Swarm information
+      ansible.builtin.set_fact:
+        swarm_manager_ip: "{{ hostvars[groups['control_plane'][0]].swarm_manager_ip }}"
+        swarm_worker_token_value: "{{ hostvars[groups['control_plane'][0]].swarm_worker_token_value }}"
+
+    - name: Join Docker Swarm over Tailscale
+      ansible.builtin.command:
+        cmd: >
+          docker swarm join
+          --token {{ swarm_worker_token_value }}
+          --advertise-addr {{ ansible_host }}
+          --listen-addr {{ ansible_host }}:2377
+          {{ swarm_manager_ip }}:2377
+      when: swarm_state.stdout != "active"
+
+- name: Verify Docker Swarm
+  hosts: control_plane
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Get Docker nodes
+      ansible.builtin.command:
+        cmd: docker node ls
+      register: docker_nodes
+      changed_when: false
+
+    - name: Display Docker cluster
+      ansible.builtin.debug:
+        msg: "{{ docker_nodes.stdout }}"
+
+    - name: Get Swarm manager address
+      ansible.builtin.command:
+        cmd: docker info --format '{{ "{{.Swarm.NodeAddr}}" }}'
+      register: node_address
+      changed_when: false
+
+    - name: Verify manager uses Tailscale
+      ansible.builtin.assert:
+        that:
+          - node_address.stdout is match('^100\\.')
+        fail_msg: "Docker Swarm is NOT using the Tailscale address."
+
+- name: Install Dokploy on rpi1
+  hosts: control_plane
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Download Dokploy installer
+      ansible.builtin.get_url:
+        url: https://dokploy.com/install.sh
+        dest: /tmp/dokploy-install.sh
+        mode: "0755"
+
+    - name: Run Dokploy installer
+      ansible.builtin.command:
+        cmd: /tmp/dokploy-install.sh
+      environment:
+        ADVERTISE_ADDR: "{{ swarm_manager_ip }}"
+      register: dokploy_install
+
+    - name: Display Dokploy installer output
+      ansible.builtin.debug:
+        var: dokploy_install.stdout_lines
+
+    - name: Wait for Dokploy
+      ansible.builtin.pause:
+        seconds: 15
+
+    - name: Show Dokploy services
+      ansible.builtin.command:
+        cmd: docker service ls
+      register: dokploy_services
+      changed_when: false
+
+    - name: Display Dokploy services
+      ansible.builtin.debug:
+        msg: "{{ dokploy_services.stdout }}"

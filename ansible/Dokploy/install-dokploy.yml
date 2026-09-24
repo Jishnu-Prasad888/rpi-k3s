@@ -1,0 +1,129 @@
+---
+- name: Prepare all Raspberry Pis
+  hosts: rpi
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      ansible.builtin.apt:
+        name:
+          - curl
+          - ca-certificates
+          - gnupg
+          - git
+          - sudo
+        state: present
+
+    - name: Install Docker
+      ansible.builtin.shell: |
+        curl -fsSL https://get.docker.com | sh
+      args:
+        creates: /usr/bin/docker
+
+    - name: Add rpi user to docker group
+      ansible.builtin.user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: true
+
+    - name: Enable Docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
+
+- name: Initialize Docker Swarm on rpi1
+  hosts: control_plane
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Check current Swarm state
+      ansible.builtin.command:
+        cmd: docker info --format '{{ "{{.Swarm.LocalNodeState}}" }}'
+      register: swarm_state
+      changed_when: false
+
+    - name: Initialize Docker Swarm
+      ansible.builtin.command:
+        cmd: >
+          docker swarm init
+          --advertise-addr {{ ansible_host }}
+      when: swarm_state.stdout != "active"
+
+    - name: Get worker join token
+      ansible.builtin.command:
+        cmd: docker swarm join-token -q worker
+      register: worker_token
+      changed_when: false
+
+    - name: Store worker token
+      ansible.builtin.set_fact:
+        swarm_worker_token: "{{ worker_token.stdout }}"
+
+- name: Join workers to Docker Swarm
+  hosts: workers
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Check current Swarm state
+      ansible.builtin.command:
+        cmd: docker info --format '{{ "{{.Swarm.LocalNodeState}}" }}'
+      register: swarm_state
+      changed_when: false
+
+    - name: Join rpi1 Swarm
+      ansible.builtin.command:
+        cmd: >
+          docker swarm join
+          --token {{ hostvars[groups['control_plane'][0]].swarm_worker_token }}
+          {{ hostvars[groups['control_plane'][0]].ansible_host }}:2377
+      when: swarm_state.stdout != "active"
+
+- name: Install Dokploy on rpi1
+  hosts: control_plane
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Check whether Dokploy is already installed
+      ansible.builtin.stat:
+        path: /opt/dokploy
+      register: dokploy_dir
+
+    - name: Create Dokploy directory
+      ansible.builtin.file:
+        path: /opt/dokploy
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Download Dokploy installer
+      ansible.builtin.get_url:
+        url: https://dokploy.com/install.sh
+        dest: /opt/dokploy/install.sh
+        mode: "0755"
+      when: not dokploy_dir.stat.exists
+
+    - name: Install Dokploy
+      ansible.builtin.command:
+        cmd: /opt/dokploy/install.sh
+      when: not dokploy_dir.stat.exists
+
+    - name: Display cluster information
+      ansible.builtin.command:
+        cmd: docker node ls
+      register: docker_nodes
+      changed_when: false
+
+    - name: Show Docker Swarm cluster
+      ansible.builtin.debug:
+        var: docker_nodes.stdout

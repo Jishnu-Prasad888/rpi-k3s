@@ -112,6 +112,12 @@ All nodes run Tailscale for out-of-LAN access. The `tailscale_inventory.ini` pro
 | **OpenBao** | Vault-compatible secrets engine | Internal (`openbao.openbao.svc:8200`) |
 | **External Secrets** | Syncs K8s secrets from OpenBao | ClusterSecretStore in `openbao` namespace |
 
+## Documentation
+
+A contents page for the `ansible/` directory — every folder, what it contains, and what each file does — is in:
+
+- [ansible/DOCS.md](ansible/DOCS.md)
+
 ## Repository Layout
 
 ```
@@ -126,44 +132,52 @@ rpi-k3s/
     ├── k3s_inventory.ini              # Adds [control_plane] and [workers] groups
     ├── tailscale_inventory.ini        # Tailscale 100.x fallback, group [raspberry_pis]
     │
-    ├── # Bootstrapping playbooks
-    ├── static_ips.yml                 # Assign permanent static IPs via NetworkManager
-    ├── enable_cgroups.yml             # Enable memory cgroups in cmdline.txt (required for K3s)
-    ├── enable_cgroups_2.yml           # Older variant — prefer enable_cgroups.yml
-    ├── install_k3s.yml                # Install K3s server + agents, verify cluster
-    ├── uninstall_k3s.yml              # Full K3s teardown and reboot
-    │
-    ├── # Configuration playbooks
-    ├── disable_k3s_defaults.yml       # Disable Traefik + ServiceLB (replaced by MetalLB/nginx)
-    ├── install_helm.yml               # Install Helm 3 on control plane
-    ├── install_metallb.yml            # Install MetalLB v0.15.2 native manifests
-    ├── cluster_health.yml             # Read-only diagnostics (hostname, disk, RAM, temp, etc.)
+    ├── # Ansible playbooks (run against the Pis via ansible-playbook)
+    ├── playbooks/
+    │   ├── static_ips.yml             # Assign permanent static IPs via NetworkManager
+    │   ├── enable_cgroups.yml         # Enable memory cgroups in cmdline.txt (K3s requirement)
+    │   ├── enable_cgroups_2.yml       # Older variant — prefer enable_cgroups.yml
+    │   ├── install_k3s.yml            # Install K3s server + agents, verify cluster
+    │   ├── uninstall_k3s.yml          # Full K3s teardown and reboot
+    │   ├── disable_k3s_defaults.yml   # Disable Traefik + ServiceLB (replaced by MetalLB/nginx)
+    │   ├── install_helm.yml           # Install Helm 3 on control plane
+    │   ├── install_metallb.yml        # Install MetalLB v0.15.2 native manifests
+    │   └── cluster_health.yml         # Read-only diagnostics (hostname, disk, RAM, temp, etc.)
     │
     ├── # Kubernetes manifests (kubectl apply -f on rpi1)
-    ├── metallb-config.yml             # IPAddressPool + L2Advertisement
-    ├── ingress-nginx.yml              # nginx ingress controller (HelmChart CR)
-    ├── cert-manager.yml               # cert-manager (HelmChart CR)
-    ├── local-ca.yml                   # Self-signed CA + ClusterIssuer
-    ├── longhorn.yml                   # Longhorn storage (HelmChart CR)
-    ├── monitoring.yml                 # kube-prometheus-stack (HelmChart CR)
-    ├── prometheus-ingress.yml         # Ingress: prometheus.k3s.local
-    ├── grafana-ingress.yml            # Ingress: grafana.k3s.local
-    ├── minio-operator.yml             # MinIO operator (HelmChart CR)
-    ├── minio-tenant.yml               # MinIO tenant (1 server, 10Gi Longhorn)
-    ├── minio-tls.yml                  # TLS certificate for MinIO
-    ├── minio-ingress.yml              # Ingress: minio.k3s.local (HTTP)
-    ├── minio-ingress-tls.yml          # Ingress: minio.k3s.local (HTTPS)
-    ├── harbor.yml                     # Harbor registry (HelmChart CR)
-    ├── openchoreo-secret.yml          # OpenChoreo bootstrap CA
-    ├── openbao-secrets.yml            # External Secrets → OpenBao ClusterSecretStore
-    ├── thunder-values.yaml            # Helm values for OpenChoreo Thunder
-    ├── register-backstage-client.yaml # One-shot Job: register Backstage OAuth2 client
+    ├── manifests/
+    │   ├── metallb-config.yml         # IPAddressPool + L2Advertisement
+    │   ├── ingress-nginx.yml          # nginx ingress controller (HelmChart CR)
+    │   ├── cert-manager.yml           # cert-manager (HelmChart CR)
+    │   ├── local-ca.yml               # Self-signed CA + ClusterIssuer
+    │   ├── longhorn.yml               # Longhorn storage (HelmChart CR)
+    │   ├── monitoring.yml             # kube-prometheus-stack (HelmChart CR)
+    │   ├── prometheus-ingress.yml     # Ingress: prometheus.k3s.local
+    │   ├── grafana-ingress.yml        # Ingress: grafana.k3s.local
+    │   ├── minio-operator.yml         # MinIO operator (HelmChart CR)
+    │   ├── minio-tenant.yml           # MinIO tenant (1 server, 10Gi Longhorn)
+    │   ├── minio-tls.yml              # TLS certificate for MinIO
+    │   ├── minio-ingress.yml          # Ingress: minio.k3s.local (HTTP)
+    │   ├── minio-ingress-tls.yml      # Ingress: minio.k3s.local (HTTPS)
+    │   ├── harbor.yml                 # Harbor registry (HelmChart CR)
+    │   ├── openchoreo-secret.yml      # OpenChoreo bootstrap CA
+    │   ├── openbao-secrets.yml        # External Secrets → OpenBao ClusterSecretStore
+    │   ├── thunder-values.yaml        # Helm values for OpenChoreo Thunder
+    │   └── register-backstage-client.yaml # One-shot Job: register Backstage OAuth2 client
     │
-    └── # Smoke tests
-    ├── metallb-test.yml               # nginx LoadBalancer — verify MetalLB assigns IP
-    ├── ingress-test.yml               # nginx + Ingress at test.k3s.local
-    ├── storage-test.yml               # busybox writing to local-path PVC
-    └── longhorn-test.yml              # busybox writing to Longhorn PVC
+    ├── # Smoke tests (kubectl apply → verify → delete)
+    ├── tests/
+    │   ├── metallb-test.yml           # nginx LoadBalancer — verify MetalLB assigns IP
+    │   ├── ingress-test.yml           # nginx + Ingress at test.k3s.local
+    │   ├── storage-test.yml           # busybox writing to local-path PVC
+    │   └── longhorn-test.yml          # busybox writing to Longhorn PVC
+    │
+    ├── # Dokploy (Docker Swarm) playbooks
+    ├── Dokploy/
+    │   ├── install-dokploy.yml            # Docker + Swarm + Dokploy on the Pis
+    │   └── install-dokploy-from-scratch.yml # Clean-slate Docker/Dokploy install over Tailscale
+    │
+    └── DOCS.md                       # Contents page — folders + every file (see Documentation above)
 ```
 
 ## Prerequisites
@@ -182,7 +196,7 @@ Run all commands from the `ansible/` directory.
 Uses the Tailscale inventory (run from anywhere with VPN access):
 
 ```sh
-ansible-playbook -i tailscale_inventory.ini static_ips.yml
+ansible-playbook -i tailscale_inventory.ini playbooks/static_ips.yml
 ```
 
 Sets permanent IPs via NetworkManager on each Pi (runs one at a time).
@@ -192,7 +206,7 @@ Sets permanent IPs via NetworkManager on each Pi (runs one at a time).
 Required for K3s on Raspberry Pi OS:
 
 ```sh
-ansible-playbook -i inventory.ini enable_cgroups.yml
+ansible-playbook -i inventory.ini playbooks/enable_cgroups.yml
 ```
 
 Appends `cgroup_enable=memory cgroup_memory=1` to `cmdline.txt` and reboots.
@@ -202,7 +216,7 @@ Appends `cgroup_enable=memory cgroup_memory=1` to `cmdline.txt` and reboots.
 Bootstraps the control plane on rpi1, then joins all workers:
 
 ```sh
-ansible-playbook -i k3s_inventory.ini install_k3s.yml
+ansible-playbook -i k3s_inventory.ini playbooks/install_k3s.yml
 ```
 
 ### 4. Disable K3s defaults
@@ -210,31 +224,31 @@ ansible-playbook -i k3s_inventory.ini install_k3s.yml
 Disables the built-in Traefik and ServiceLB (replaced by MetalLB + ingress-nginx):
 
 ```sh
-ansible-playbook -i k3s_inventory.ini disable_k3s_defaults.yml
+ansible-playbook -i k3s_inventory.ini playbooks/disable_k3s_defaults.yml
 ```
 
 ### 5. Install Helm
 
 ```sh
-ansible-playbook -i k3s_inventory.ini install_helm.yml
+ansible-playbook -i k3s_inventory.ini playbooks/install_helm.yml
 ```
 
 ### 6. Install MetalLB
 
 ```sh
-ansible-playbook -i k3s_inventory.ini install_metallb.yml
+ansible-playbook -i k3s_inventory.ini playbooks/install_metallb.yml
 ```
 
 Then apply the IP pool configuration on rpi1:
 
 ```sh
-k3s kubectl apply -f metallb-config.yml
+k3s kubectl apply -f manifests/metallb-config.yml
 ```
 
 ### 7. Install ingress-nginx
 
 ```sh
-k3s kubectl apply -f ingress-nginx.yml
+k3s kubectl apply -f manifests/ingress-nginx.yml
 ```
 
 ## Applying Workloads
@@ -252,20 +266,20 @@ There is no Ansible playbook that applies them automatically — this is intenti
 Some components depend on others. Apply in this order:
 
 ```
-1. cert-manager.yml          # Certificate management
-2. local-ca.yml              # Self-signed CA + ClusterIssuer
-3. longhorn.yml              # Distributed storage
-4. monitoring.yml            # Prometheus + Grafana
-5. prometheus-ingress.yml    # Expose Prometheus
-6. grafana-ingress.yml       # Expose Grafana
-7. minio-operator.yml        # MinIO operator
-8. minio-tenant.yml          # MinIO tenant
-9. minio-tls.yml             # TLS cert for MinIO
-10. minio-ingress-tls.yml    # Expose MinIO (HTTPS)
-11. harbor.yml               # Container registry
-12. openbao-secrets.yml      # External Secrets store
-13. openchoreo-secret.yml    # OpenChoreo CA
-14. thunder-values.yaml      # OpenChoreo Thunder (helm install)
+1. manifests/cert-manager.yml      # Certificate management
+2. manifests/local-ca.yml          # Self-signed CA + ClusterIssuer
+3. manifests/longhorn.yml          # Distributed storage
+4. manifests/monitoring.yml        # Prometheus + Grafana
+5. manifests/prometheus-ingress.yml # Expose Prometheus
+6. manifests/grafana-ingress.yml   # Expose Grafana
+7. manifests/minio-operator.yml    # MinIO operator
+8. manifests/minio-tenant.yml      # MinIO tenant
+9. manifests/minio-tls.yml         # TLS cert for MinIO
+10. manifests/minio-ingress-tls.yml # Expose MinIO (HTTPS)
+11. manifests/harbor.yml           # Container registry
+12. manifests/openbao-secrets.yml  # External Secrets store
+13. manifests/openchoreo-secret.yml # OpenChoreo CA
+14. manifests/thunder-values.yaml  # OpenChoreo Thunder (helm install)
 ```
 
 ## Smoke Tests
@@ -274,25 +288,25 @@ Validate individual components after installation:
 
 ```sh
 # MetalLB — verify an IP is assigned
-k3s kubectl apply -f metallb-test.yml
+k3s kubectl apply -f tests/metallb-test.yml
 
 # Ingress — verify host-based routing
-k3s kubectl apply -f ingress-test.yml
+k3s kubectl apply -f tests/ingress-test.yml
 
 # Local-path storage — verify PVC write
-k3s kubectl apply -f storage-test.yml
+k3s kubectl apply -f tests/storage-test.yml
 
 # Longhorn storage — verify distributed PVC write
-k3s kubectl apply -f longhorn-test.yml
+k3s kubectl apply -f tests/longhorn-test.yml
 ```
 
 Clean up after testing:
 
 ```sh
-k3s kubectl delete -f metallb-test.yml
-k3s kubectl delete -f ingress-test.yml
-k3s kubectl delete -f storage-test.yml
-k3s kubectl delete -f longhorn-test.yml
+k3s kubectl delete -f tests/metallb-test.yml
+k3s kubectl delete -f tests/ingress-test.yml
+k3s kubectl delete -f tests/storage-test.yml
+k3s kubectl delete -f tests/longhorn-test.yml
 ```
 
 ## Cluster Health Check
@@ -300,7 +314,7 @@ k3s kubectl delete -f longhorn-test.yml
 Run diagnostics across all nodes (hostnames, IPs, connectivity, disk, RAM, CPU, temperature, routing):
 
 ```sh
-ansible-playbook -i inventory.ini cluster_health.yml
+ansible-playbook -i inventory.ini playbooks/cluster_health.yml
 ```
 
 ## Tearing Down
@@ -308,7 +322,7 @@ ansible-playbook -i inventory.ini cluster_health.yml
 Full K3s removal across all nodes (uninstalls, removes data, reboots):
 
 ```sh
-ansible-playbook -i k3s_inventory.ini uninstall_k3s.yml
+ansible-playbook -i k3s_inventory.ini playbooks/uninstall_k3s.yml
 ```
 
 ## Troubleshooting
@@ -334,7 +348,7 @@ ansible-playbook -i k3s_inventory.ini uninstall_k3s.yml
 ### Longhorn volumes stuck
 
 - Check node disks: `k3s kubectl get nodes -l longhorn.io/node --show-labels`
-- Verify sufficient disk space: run `cluster_health.yml` playbook
+- Verify sufficient disk space: run `playbooks/cluster_health.yml`
 - Check Longhorn manager logs: `k3s kubectl logs -n longhorn-system -l app=longhorn-manager`
 
 ### Accessing the cluster from your workstation
@@ -354,6 +368,6 @@ ssh rpi@100.x.x.x "k3s kubectl get nodes"
 
 ## Notes
 
-- The server IP `192.168.0.101` is hardcoded in `install_k3s.yml`.
-- `enable_cgroups_2.yml` is an older variant; prefer `enable_cgroups.yml`.
-- Secrets are committed in `thunder-values.yaml` and `register-backstage-client.yaml` — rotate these if the repo is ever made public.
+- The server IP `192.168.0.101` is hardcoded in `playbooks/install_k3s.yml`.
+- `enable_cgroups_2.yml` is an older variant; prefer `enable_cgroups.yml` (both in `playbooks/`).
+- Secrets are committed in `manifests/thunder-values.yaml` and `manifests/register-backstage-client.yaml` — rotate these if the repo is ever made public.
